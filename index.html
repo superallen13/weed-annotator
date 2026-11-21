@@ -1,0 +1,1261 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Weed Annotator">
+<meta name="theme-color" content="#000000">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>Weed Annotator</title>
+<style>
+/* The visual language of the iPad app: greyscale chrome; the only saturated colours are the
+   plant labels and the three that always mean the same thing (alert, good, caution). */
+:root {
+  --surface: #171717; --raised: #2b2b2b; --hairline: rgba(255,255,255,.12); --secondary: rgba(255,255,255,.62);
+  --control: rgba(255,255,255,.14); --alert: #ff453a; --good: #30d158; --caution: #ffd60a;
+  --top: env(safe-area-inset-top, 0px); --bottom: env(safe-area-inset-bottom, 0px);
+  --left: env(safe-area-inset-left, 0px); --right: env(safe-area-inset-right, 0px);
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; background: #000; color: #fff; overflow: hidden; overscroll-behavior: none; touch-action: manipulation;
+  font: 15px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+[hidden] { display: none !important; }
+button { font: inherit; color: inherit; border: 0; background: none; padding: 0; cursor: pointer; }
+svg.icon { width: 1.25em; height: 1.25em; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+svg.glyph { width: 22px; height: 22px; flex: none; }
+.caption { font-size: 11px; font-weight: 600; letter-spacing: .08em; color: var(--secondary); }
+
+/* The app's one button shape. Plain: a quiet secondary button. `.primary`: the screen's one main action. */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 40px; padding: 0 14px;
+  border-radius: 12px; background: var(--control); font-weight: 600; white-space: nowrap; }
+a.btn { color: inherit; text-decoration: none; }
+.btn.primary { background: #fff; color: #000; }
+.btn.good { background: var(--good); color: #000; }
+.btn.danger { color: var(--alert); }
+.btn.big { min-height: 52px; padding: 0 18px; font-size: 17px; }
+.btn.square { width: 42px; padding: 0; }
+.btn:disabled { opacity: .35; }
+.btn:active:not(:disabled) { opacity: .7; }
+.chip { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 13px; border-radius: 12px;
+  background: var(--control); font-weight: 600; white-space: nowrap; flex: none; }
+.chip.on { background: var(--chip, #fff); color: #000; }
+.panel { background: rgba(20,20,20,.72); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px);
+  border: 1px solid var(--hairline); border-radius: 18px; }
+
+/* Camera: status along the top, the newest photo and the way into labelling bottom left, the shutter bottom right. */
+#camera { position: fixed; inset: 0; background: #000; }
+#video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
+#flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity .25s; }
+#flash.on { opacity: .6; transition: none; }
+#camera .chrome { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 10px; pointer-events: none;
+  padding: calc(12px + var(--top)) calc(12px + var(--right)) calc(14px + var(--bottom)) calc(12px + var(--left)); }
+#camera .chrome > * { pointer-events: auto; }
+#status { display: flex; align-items: center; gap: 14px; min-height: 44px; padding: 0 16px; border-radius: 22px; font-weight: 600; }
+#status span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+#status .grow { flex: 1; }
+.btn.help { height: 32px; padding: 0 12px; border-radius: 16px; font-size: 15px; flex: none; }
+#status .help { margin-right: -8px; }
+#toast { align-self: center; padding: 10px 14px; font-size: 14px; max-width: 340px; text-align: center; }
+#ring { position: fixed; width: 76px; height: 76px; margin: -38px 0 0 -38px; border: 1.5px solid #fff; border-radius: 10px; pointer-events: none; }
+#banner { padding: 10px 14px; border-radius: 14px; background: var(--alert); font-weight: 600; }
+#middle { flex: 1; display: flex; align-items: center; justify-content: center; pointer-events: none !important; }
+#nocam { pointer-events: auto; max-width: 440px; padding: 22px; text-align: center; display: flex; flex-direction: column; gap: 12px; align-items: center; }
+#nocam h2 { margin: 0; font-size: 20px; }
+#nocam p { margin: 0; color: var(--secondary); }
+#controls { display: flex; align-items: flex-end; gap: 14px; }
+#controls .left { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+#controls .pair { display: flex; flex-wrap: wrap; gap: 10px; }
+#latest { display: flex; align-items: center; gap: 12px; padding: 8px 14px 8px 8px; width: min(340px, 100%); text-align: left; }
+#latest .thumb { width: 84px; height: 72px; border-radius: 10px; background: rgba(255,255,255,.08) center/cover; flex: none; }
+#latest .text { flex: 1; min-width: 0; }
+#latest .line { display: flex; align-items: center; gap: 7px; font-size: 18px; font-weight: 600; white-space: nowrap; }
+#latest .sub { color: var(--secondary); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 400px) { #latest .thumb { width: 60px; height: 52px; } #latest { gap: 10px; padding-right: 10px; } }
+#shutter { width: 92px; height: 92px; border-radius: 50%; border: 5px solid #fff; background: rgba(0,0,0,.35); flex: none; position: relative; }
+#shutter::after { content: ""; position: absolute; inset: 9px; border-radius: 50%; background: #fff; transition: transform .1s; }
+#shutter:active::after { transform: scale(.9); }
+#shutter:disabled { opacity: .35; }
+
+/* Labelling: toolbar, the photo, the list of photos, the inspector. */
+#label { position: fixed; inset: 0; background: var(--surface); display: grid; grid-template-rows: auto 1fr auto auto auto;
+  grid-template-columns: 100%; padding: var(--top) var(--right) var(--bottom) var(--left); }
+#toolbar { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--hairline); min-width: 0; }
+#toolbar .title { flex: 1; min-width: 0; }
+#toolbar .title b { display: block; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#toolbar .title small { display: block; color: var(--secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#stage { position: relative; min-height: 0; background: #000; overflow: hidden; }
+#canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+/* What to do now, in a line under the photo. Its height is fixed so that the photo does not jump when the words change. */
+#guide { display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 8px 0 12px; border-top: 1px solid var(--hairline); min-width: 0; }
+#guide .text { flex: 1; min-width: 0; font-size: 13.5px; line-height: 1.25; color: var(--secondary); max-height: 34px; overflow: hidden; }
+#guide .text b { color: #fff; font-weight: 600; }
+#list { display: flex; align-items: flex-start; gap: 6px; padding: 8px 12px; overflow-x: auto; border-top: 1px solid var(--hairline); scrollbar-width: none; }
+#list::-webkit-scrollbar { display: none; }
+#listhead { display: none; }
+.row { display: flex; align-items: center; gap: 10px; padding: 3px; border-radius: 10px; border: 2px solid transparent; position: relative; flex: none; text-align: left; }
+.row.on { border-color: #fff; }
+.row .thumb { width: 56px; height: 48px; border-radius: 6px; background: rgba(255,255,255,.06) center/cover; flex: none; }
+.row .text { display: none; min-width: 0; flex: 1; }
+.row .name { display: flex; align-items: center; gap: 5px; font-weight: 600; white-space: nowrap; overflow: hidden; }
+.row .name.dim, .row .cap { color: var(--secondary); }
+.row .cap { font-size: 12px; white-space: nowrap; }
+.row .tick { position: absolute; right: 1px; bottom: 1px; width: 18px; height: 18px; border-radius: 50%; background: var(--good); color: #000;
+  display: flex; align-items: center; justify-content: center; font-size: 12px; }
+.row .tick svg { width: 12px; height: 12px; stroke-width: 3; }
+#inspector { display: flex; flex-direction: column; gap: 9px; padding: 10px 12px; border-top: 1px solid var(--hairline); }
+#inspector .line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+#inspector .caption { width: 44px; flex: none; }
+/* Chips wrap rather than scroll: every label is on screen, the typed one included. */
+#inspector .chips { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }
+#inspector .dimmed { opacity: .35; pointer-events: none; }
+#inspector .photo { border-bottom: 1px solid var(--hairline); padding-bottom: 9px; }
+#inspector .photo .grow { flex: 1; }
+@media (max-width: 560px) { .btn .wide { display: none; } }
+/* "(no weeds)" is spelt out on the button only where the row has room for it; the line above the photos says it everywhere. */
+#weedfree .extra { display: none; }
+@media (orientation: portrait) and (min-width: 390px) { #weedfree .extra { display: inline; } }
+
+/* Held sideways: the photo keeps the height, everything else sits in a column beside it. */
+@media (orientation: landscape) {
+  #label { grid-template-columns: 1fr min(330px, 50%); grid-template-rows: auto auto auto minmax(64px, 1fr) auto; }
+  #toolbar { grid-column: 1 / 3; }
+  #stage { grid-column: 1; grid-row: 2 / 6; }
+  #guide { grid-column: 2; grid-row: 2; border-top: 0; border-left: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); }
+  #list { grid-column: 2; grid-row: 4; border-top: 0; border-left: 1px solid var(--hairline); align-content: flex-start; }
+  #inspector { grid-column: 2; grid-row: 5; border-left: 1px solid var(--hairline); }
+  .btn .wide { display: none; }
+}
+/* A phone held sideways has little height: the row titles go, so each row of chips fits on one line. */
+@media (orientation: landscape) and (max-height: 639px) {
+  #inspector .caption { display: none; }
+  #inspector { gap: 7px; padding: 8px 10px; }
+  .chip { padding: 0 11px; }
+}
+@media (orientation: landscape) and (min-height: 640px) {
+  #listhead { display: flex; grid-column: 2; grid-row: 3; align-items: center; justify-content: space-between; padding: 0 14px; height: 38px;
+    border-left: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); }
+  #listhead small { color: var(--secondary); }
+  #label { grid-template-columns: 1fr min(380px, 42%); }
+  #list { flex-direction: column; align-items: stretch; overflow-x: hidden; overflow-y: auto; gap: 2px; padding: 8px; }
+  .row { border: 0; padding: 7px; }
+  .row.on { background: var(--raised); }
+  .row .text { display: block; }
+  .row .tick { position: static; }
+}
+
+/* Sheets and prompts. */
+#days { position: fixed; inset: 0; background: var(--surface); display: flex; flex-direction: column; padding: var(--top) var(--right) var(--bottom) var(--left); }
+#days header { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-bottom: 1px solid var(--hairline); }
+#days header b { flex: 1; font-size: 17px; }
+#daylist { flex: 1; overflow-y: auto; padding: 6px 12px; -webkit-overflow-scrolling: touch; }
+.day { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--hairline); }
+.day .open { flex: 1; text-align: left; display: flex; align-items: center; gap: 12px; min-width: 0; }
+.day .open div { flex: 1; min-width: 0; }
+.day b { display: block; font-size: 16px; }
+.day small, #days footer { color: var(--secondary); }
+#days footer { padding: 10px 14px; font-size: 13px; border-top: 1px solid var(--hairline); }
+.empty { text-align: center; color: var(--secondary); padding: 60px 20px; }
+#overlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; justify-content: center; align-items: flex-start;
+  padding: calc(64px + var(--top)) 14px 14px; }
+#dialog { width: min(480px, 100%); max-height: 100%; overflow-y: auto; background: var(--raised); border: 1px solid var(--hairline); border-radius: 18px; padding: 18px;
+  display: flex; flex-direction: column; gap: 14px; box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+#dialog ol { margin: 0; padding-left: 24px; display: flex; flex-direction: column; gap: 12px; }
+#dialog li::marker { font-weight: 700; }
+#dialog li span { color: var(--secondary); }
+#dialog h3 { margin: 0; font-size: 18px; display: flex; align-items: center; gap: 9px; }
+#dialog p { margin: 0; }
+#dialog .dim { color: var(--secondary); }
+#dialog .warn { color: var(--caution); display: flex; gap: 8px; align-items: center; }
+#dialog input { font: inherit; font-size: 20px; color: #fff; background: var(--control); border: 0; border-radius: 12px; height: 52px;
+  padding: 0 14px; width: 100%; outline: none; -webkit-user-select: text; user-select: text; }
+#dialog .actions { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+
+<main id="camera">
+  <video id="video" playsinline muted autoplay></video>
+  <div id="flash"></div>
+  <div id="ring" hidden></div>
+  <div class="chrome">
+    <div id="status" class="panel"></div>
+    <div id="banner" hidden></div>
+    <div id="toast" class="panel" hidden></div>
+    <div id="middle"><div id="nocam" class="panel" hidden></div></div>
+    <div id="controls">
+      <div class="left">
+        <button id="latest" class="panel" hidden></button>
+        <div class="pair">
+          <button id="alldays" class="btn"></button>
+          <button id="exportnow" class="btn" hidden></button>
+        </div>
+      </div>
+      <button id="shutter" aria-label="Take photo"></button>
+    </div>
+  </div>
+</main>
+
+<main id="label" hidden>
+  <div id="toolbar"></div>
+  <div id="stage"><canvas id="canvas"></canvas></div>
+  <div id="guide"></div>
+  <div id="listhead"><span class="caption">PHOTOS</span><small id="listcount"></small></div>
+  <div id="list"></div>
+  <div id="inspector"></div>
+</main>
+
+<div id="days" hidden>
+  <header><b>All days</b><button id="daysclose" class="btn">Close</button></header>
+  <div id="daylist"></div>
+  <footer id="daysfoot"></footer>
+</div>
+
+<div id="overlay" hidden><div id="dialog"></div></div>
+<input id="picker" type="file" accept="image/*" capture="environment" hidden>
+
+<script>
+"use strict";
+// Weed Annotator for phones: the same job as the iPad app, with the phone's own camera.
+// Take a photo of a plant, box what is in it, say what it is and how far along, export.
+// Everything is kept on this phone and works without a network.
+const VERSION = "2026-11-17";
+
+// ---------- What a box can say ----------
+
+// The target species, then the look-alike class. The first is what a new box starts as.
+// Ids and names match the iPad app, so that exports from both merge into one dataset.
+const PRESETS = [
+  { id: "giant-rats-tail-grass", name: "Giant rat's tail grass", short: "Rat's tail", isWeed: true, color: "#ff9e0a", glyph: "ratsTail" },
+  { id: "lantana", name: "Lantana", short: "Lantana", isWeed: true, color: "#c778ff", glyph: "lantana" },
+  { id: "look-alike", name: "Look-alike, not a weed", short: "Look-alike", isWeed: false, color: "#63d1ff", glyph: "lookAlike" },
+];
+const STAGES = [["early", "Early"], ["mature", "Mature"], ["unsure", "Unsure"]];
+/** Grey for a label typed in the field, which has no colour of its own. */
+const TYPED_COLOR = "#8e8e93";
+const preset = id => PRESETS.find(p => p.id === id);
+const labelName = id => preset(id)?.name ?? id;
+const labelColor = id => preset(id)?.color ?? TYPED_COLOR;
+
+/** The label a typed name stands for: a preset when it names one, otherwise the name itself, tidied. Null when nothing was typed. */
+function typedLabel(text) {
+  const name = text.trim().split(/\s+/).filter(Boolean).join(" ");
+  if (!name) return null;
+  const same = other => other.toLowerCase() === name.toLowerCase();
+  return PRESETS.find(p => same(p.id) || same(p.name) || same(p.short))?.id ?? name.slice(0, 40);
+}
+
+// ---------- Small helpers ----------
+
+const $ = id => document.getElementById(id);
+/** Builds an element; text always goes in as text, so a typed label can never become markup. */
+function h(tag, props = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(props)) {
+    if (key === "class") node.className = value;
+    else if (key === "style") node.style.cssText = value;
+    else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+    else if (value === true) node.setAttribute(key, "");
+    else if (value !== false && value != null) node.setAttribute(key, value);
+  }
+  for (const child of children.flat()) if (child != null && child !== false) node.append(child);
+  return node;
+}
+const ICONS = {
+  back: "M15 5l-7 7 7 7", next: "M9 5l7 7-7 7", export: "M12 15V4m0 0l-4 4m4-4l4 4M5 12v7h14v-7",
+  trash: "M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12M10 11v5M14 11v5", check: "M5 12.5l4.5 4.5L19 7.5",
+  arrow: "M5 12h14m0 0l-5-5m5 5l-5 5", leaf: "M5 19c0-8 5-13 14-14 0 9-5 14-13 14zM5 19l7-7",
+  calendar: "M5 7h14v12H5zM5 11h14M9 5v4M15 5v4", type: "M9 5h6M12 5v14M9 19h6", x: "M6 6l12 12M18 6L6 18",
+  info: "M12 21a9 9 0 100-18 9 9 0 000 18zM12 11v6M12 7.5v.5",
+  frame: "M5 9V5h4M15 5h4v4M19 15v4h-4M9 19H5v-4",
+  pin: "M12 21s6-5.5 6-11a6 6 0 10-12 0c0 5.5 6 11 6 11zM12 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z",
+  camera: "M4 8h3l2-2h6l2 2h3v11H4zM12 17a3.5 3.5 0 100-7 3.5 3.5 0 000 7z",
+};
+function icon(name) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("class", "icon");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", ICONS[name]);
+  svg.append(path);
+  return svg;
+}
+
+/** A small drawing of a plant on a 24-point grid, so a label can be told by shape as well as colour: the same drawings as the iPad app. */
+function glyph(kind, color) {
+  const leaf = (a, b, bend, width) => {
+    const length = Math.max(Math.hypot(b[0] - a[0], b[1] - a[1]), 0.001);
+    const control = offset => [(a[0] + b[0]) / 2 - (b[1] - a[1]) / length * 2 * offset, (a[1] + b[1]) / 2 + (b[0] - a[0]) / length * 2 * offset];
+    const [c1, c2] = [control(bend + width / 2), control(bend - width / 2)];
+    return `<path fill="${color}" d="M${a} Q${c1} ${b} Q${c2} ${a}Z"/>`;
+  };
+  const rod = (a, b, width) => `<path fill="none" stroke="${color}" stroke-width="${width}" stroke-linecap="round" d="M${a} L${b}"/>`;
+  const ground = `<rect fill="${color}" x="5" y="21.4" width="14" height="1.9" rx=".95"/>`;
+  let body;
+  if (kind === "ratsTail") {
+    body = leaf([10, 22], [2.4, 14.5], 1.6, 3.2) + leaf([13.2, 22], [21.6, 15.5], -1.6, 3.2) + rod([12, 21.5], [13.4, 12.5], 1.4) +
+      rod([13.5, 13], [15.4, 2.3], 3) + rod([10.9, 21.5], [8.7, 14.5], 1.3) + rod([8.6, 15], [6.4, 7.2], 2.6) + ground;
+  } else if (kind === "lantana") {
+    const dots = [[12, 8.2], ...[0, 1, 2, 3, 4, 5].map(i => [12 + 5.2 * Math.cos((i * 60 + 30) * Math.PI / 180), 8.2 + 5.2 * Math.sin((i * 60 + 30) * Math.PI / 180)])];
+    body = dots.map(([x, y]) => `<circle fill="${color}" cx="${x}" cy="${y}" r="2.4"/>`).join("") +
+      `<rect fill="${color}" x="10.9" y="14.5" width="2.2" height="8.5" rx=".6"/>` + leaf([12, 21.8], [4.2, 16.8], 0, 4.4) + leaf([12, 21.8], [19.8, 16.8], 0, 4.4);
+  } else if (kind === "lookAlike") {
+    body = leaf([9.5, 22], [1.8, 11], 2.2, 3.6) + leaf([10.8, 22], [7, 3.5], 1, 3.6) + leaf([13.2, 22], [17, 3.5], -1, 3.6) + leaf([14.5, 22], [22.2, 11], -2.2, 3.6) + ground;
+  } else {
+    body = `<circle fill="${color}" cx="12" cy="12" r="5"/>`;
+  }
+  const wrap = document.createElement("span");
+  wrap.style.display = "inline-flex";
+  wrap.innerHTML = `<svg class="glyph" viewBox="0 0 24 24">${body}</svg>`;
+  return wrap.firstChild;
+}
+const labelGlyph = (id, color = labelColor(id)) => glyph(preset(id)?.glyph ?? "typed", color);
+
+const dayOf = at => { const d = new Date(at); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+const dayTitle = day => new Date(day + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+const clock = at => new Date(at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+const count = (n, noun, plural = noun + "s") => n === 1 ? `1 ${noun}` : `${n} ${plural}`;
+
+// ---------- Storage on this phone ----------
+// `photos` holds what is said about each photo and a thumbnail; `blobs` holds the photo itself,
+// kept apart so that moving a box does not rewrite megabytes.
+
+let db;
+function openDatabase() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open("weed-annotator", 1);
+    request.onupgradeneeded = () => {
+      request.result.createObjectStore("photos", { keyPath: "id" });
+      request.result.createObjectStore("blobs", { keyPath: "id" });
+    };
+    request.onsuccess = () => {
+      // A second tab with a newer version of the page must not be kept waiting by this one.
+      request.result.onversionchange = () => request.result.close();
+      resolve(request.result);
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+function store(names, mode, work) {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(names, mode);
+    const result = work(...[].concat(names).map(name => transaction.objectStore(name)));
+    transaction.oncomplete = () => resolve(result?.result);
+    transaction.onerror = transaction.onabort = () => reject(transaction.error);
+  });
+}
+
+/** Every photo on this phone, oldest first. Each: id, at, day, thumb, width, height, location, boxes, isWeedFree. */
+let photos = [];
+const isLabelled = photo => photo.boxes.length > 0 || photo.isWeedFree;
+const photosOf = day => photos.filter(p => p.day === day);
+const savePhoto = photo => store("photos", "readwrite", s => s.put(photo)).catch(() => fail("Could not save. The phone may be out of storage."));
+const photoBlob = id => store("blobs", "readonly", s => s.get(id)).then(record => record?.blob);
+async function removePhotos(list) {
+  const ids = new Set(list.map(p => p.id));
+  await store(["photos", "blobs"], "readwrite", (a, b) => { for (const id of ids) { a.delete(id); b.delete(id); } });
+  for (const id of ids) { URL.revokeObjectURL(thumbURLs.get(id)); thumbURLs.delete(id); }
+  photos = photos.filter(p => !ids.has(p.id));
+}
+const thumbURLs = new Map();
+function thumbURL(photo) {
+  if (!thumbURLs.has(photo.id)) thumbURLs.set(photo.id, URL.createObjectURL(photo.thumb));
+  return thumbURLs.get(photo.id);
+}
+
+// ---------- Camera and position ----------
+
+const video = $("video");
+let stream = null;
+/** "starting", "live", "denied" or "unavailable". */
+let cameraState = "starting";
+let busy = false;
+let problem = null;
+function fail(message) { problem = message; renderCamera(); }
+
+/** Which camera to open, once the phone's cameras have been listed: undefined before that, its id, or null to keep the browser's choice. */
+let mainCamera;
+/** Counts camera openings, so that one still under way when the camera is let go does not turn it back on. */
+let opening = 0;
+async function startCamera() {
+  if (stream || !$("label").hidden) return;
+  const mine = ++opening;
+  // 4032×3024 is the 12-megapixel photograph of a phone camera; a browser without it gives the nearest it has.
+  // A photo is a still of the live picture's size, or failing that a frame of it.
+  const ask = which => navigator.mediaDevices.getUserMedia({ audio: false, video: { ...which, width: { ideal: 4032 }, height: { ideal: 3024 } } });
+  let got = null;
+  try {
+    got = await ask(mainCamera ? { deviceId: { exact: mainCamera } } : { facingMode: { ideal: "environment" } });
+    if (mainCamera === undefined) {
+      // The back camera an iPhone hands a page joins all its lenses into one, and changes lens by itself when
+      // something comes nearer than about 20 cm: the picture jumps and refocuses. The camera it lists as
+      // "Back Camera" is the main lens alone, which stays put (it cannot focus nearer than about 20 cm).
+      // Cameras have names only once the page is allowed one, hence the two openings the first time.
+      const main = (await navigator.mediaDevices.enumerateDevices()).find(d => d.kind === "videoinput" && d.label === "Back Camera");
+      mainCamera = main?.deviceId || null;
+      if (mainCamera && got.getVideoTracks()[0]?.label !== "Back Camera") {
+        got.getTracks().forEach(track => track.stop());
+        got = await ask({ deviceId: { exact: mainCamera } });
+      }
+    }
+    if (mine !== opening) { got.getTracks().forEach(track => track.stop()); return; }
+    stream = got;
+    video.srcObject = stream;
+    await video.play();
+    cameraState = "live";
+  } catch (error) {
+    if (mine !== opening) return;
+    stream = null;
+    // The main lens could not be opened by its id: the browser's own choice of camera instead.
+    if (mainCamera) { mainCamera = null; return startCamera(); }
+    cameraState = error?.name === "NotAllowedError" ? "denied" : "unavailable";
+  }
+  renderCamera();
+}
+function stopCamera() {
+  opening++;
+  stream?.getTracks().forEach(track => track.stop());
+  stream = null;
+  video.srcObject = null;
+}
+
+/** Where the phone last knew it was. A fix older than half a minute is not used for a photo. */
+let fix = null;
+function watchPosition() {
+  navigator.geolocation?.watchPosition(position => {
+    const c = position.coords;
+    fix = { latitude: c.latitude, longitude: c.longitude, altitude: c.altitude ?? null, accuracy: c.accuracy, at: Date.now() };
+    renderStatus();
+  }, () => renderStatus(), { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 });
+}
+const currentFix = () => fix && Date.now() - fix.at < 30000 ? fix : null;
+
+/** Draws a picture upright into a JPEG no larger than 4032 on its long side (the limit of a canvas on a phone), with a thumbnail. */
+async function encode(source, width, height) {
+  const scale = Math.min(1, 4032 / Math.max(width, height));
+  const draw = (w, h) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = w; canvas.height = h;
+    canvas.getContext("2d").drawImage(source, 0, 0, w, h);
+    return canvas;
+  };
+  const jpeg = (canvas, quality) => new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", quality));
+  const full = draw(Math.round(width * scale), Math.round(height * scale));
+  const small = 320 / Math.max(width, height);
+  const blob = await jpeg(full, 0.92), thumb = await jpeg(draw(Math.round(width * small), Math.round(height * small)), 0.8);
+  if (!blob || !thumb) throw new Error("encoding failed");
+  return { blob, thumb, width: full.width, height: full.height };
+}
+async function decoded(blob) {
+  const image = new Image();
+  image.src = URL.createObjectURL(blob);
+  try { await image.decode(); } finally { URL.revokeObjectURL(image.src); }
+  return image;
+}
+
+/** How much fine detail the live picture has right now: the squared second difference between
+    neighbouring pixels in the middle of the frame, at the camera's own resolution. A shaken or
+    unfocused frame scores lower than a steady one of the same scene. */
+const probe = document.createElement("canvas");
+function sharpness() {
+  const size = Math.min(384, video.videoWidth, video.videoHeight);
+  probe.width = probe.height = size;
+  const context = probe.getContext("2d", { willReadFrequently: true });
+  context.drawImage(video, (video.videoWidth - size) / 2, (video.videoHeight - size) / 2, size, size, 0, 0, size, size);
+  const data = context.getImageData(0, 0, size, size).data, row = size * 4;
+  let total = 0;
+  for (let y = 1; y < size - 1; y++) {
+    for (let i = y * row + 5, end = (y + 1) * row - 4; i < end; i += 4) {
+      const d = 4 * data[i] - data[i - 4] - data[i + 4] - data[i - row] - data[i + row];
+      total += d * d;
+    }
+  }
+  return total;
+}
+/** A frame of the live picture, chosen for sharpness. The tap on the shutter shakes the phone, and
+    a camera's live picture can use a long exposure in dim light, so the frame at the tap is often
+    smeared. Several frames are looked at over half a second and the one with most fine detail kept. */
+async function steadiestFrame() {
+  const canvas = document.createElement("canvas");
+  canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+  const context = canvas.getContext("2d");
+  const nextFrame = () => new Promise(resolve => {
+    const timer = setTimeout(resolve, 120);
+    video.requestVideoFrameCallback?.(() => { clearTimeout(timer); resolve(); });
+  });
+  let best = -1;
+  const started = performance.now();
+  for (let frames = 0; frames < 8 && performance.now() - started < 500; frames++) {
+    const score = sharpness();
+    if (score > best) { best = score; context.drawImage(video, 0, 0, canvas.width, canvas.height); }
+    await nextFrame();
+  }
+  return canvas;
+}
+
+/** `capture` says how the picture was made: "still" (the browser's still photo), "frame" (a frame of the live picture) or "app" (the phone's camera app, when the page has no camera). */
+async function addPhoto(source, width, height, location, capture) {
+  const at = Date.now();
+  const picture = await encode(source, width, height);
+  const photo = { id: `${at}-${Math.random().toString(36).slice(2, 8)}`, at, day: dayOf(at), thumb: picture.thumb, width: picture.width, height: picture.height, capture,
+    location: location && { latitude: location.latitude, longitude: location.longitude, altitude: location.altitude, accuracy: location.accuracy }, boxes: [], isWeedFree: false };
+  await store(["photos", "blobs"], "readwrite", (a, b) => { a.put(photo); b.put({ id: photo.id, blob: picture.blob }); });
+  photos.push(photo);
+  navigator.storage?.estimate?.().then(e => {
+    if (e?.quota && e.usage / e.quota > 0.85) fail("Storage for this page is nearly full. Export, then delete days you no longer need.");
+  });
+}
+
+/** Whether this browser's camera has given a still photo: null before the first try, then true or false. */
+let stills = null;
+/** The shutter: a photo of what the live picture shows, with the position the phone has right now. */
+async function takePhoto() {
+  // The live picture has no real size for a moment after the camera starts; a press then is ignored.
+  if (busy || cameraState !== "live" || video.videoWidth < 320) return;
+  busy = true; problem = null;
+  const location = currentFix();
+  $("flash").classList.add("on");
+  requestAnimationFrame(() => requestAnimationFrame(() => $("flash").classList.remove("on")));
+  // A still takes a second or more (1.4 s measured on an iPhone), and the phone has to be steady for all of it.
+  if (stills) note("Hold still…");
+  renderCamera();
+  let reopen = false;
+  try {
+    let source = null, width = video.videoWidth, height = video.videoHeight, capture = "frame";
+    // A still is what the camera makes when asked for a photograph rather than a frame of video: on an
+    // iPhone it is the same size as the frame and holds about three times the fine detail (measured once).
+    const track = stream.getVideoTracks()[0];
+    if (window.ImageCapture && track && stills !== false) {
+      try {
+        const still = await Promise.race([new ImageCapture(track).takePhoto(), new Promise((_, reject) => setTimeout(reject, 4000))]);
+        const image = await decoded(still);
+        if (image.naturalWidth * image.naturalHeight >= width * height) [source, width, height, capture] = [image, image.naturalWidth, image.naturalHeight, "still"];
+        stills = true;
+      } catch {
+        // Safari refuses every still after one has failed, until the camera is opened again (seen on an
+        // iPhone). A camera that never gave one is not asked again.
+        if (stills) reopen = true; else stills = false;
+      }
+    }
+    if (!source) { source = await steadiestFrame(); width = source.width; height = source.height; }
+    if (!width || !height) throw new Error("no picture");
+    await addPhoto(source, width, height, location, capture);
+  } catch {
+    problem = "The photo could not be saved. Try again; if it keeps failing the phone may be out of storage.";
+  }
+  busy = false;
+  $("toast").hidden = true;
+  if (reopen && $("label").hidden) { stopCamera(); cameraState = "starting"; startCamera(); }
+  renderCamera();
+}
+
+/** A photo taken in the phone's own camera app, for when this page is not allowed the camera. */
+async function importPhoto(file) {
+  if (!file) return;
+  busy = true; problem = null; renderCamera();
+  try {
+    const image = await decoded(file);
+    await addPhoto(image, image.naturalWidth, image.naturalHeight, currentFix(), "app");
+  } catch {
+    problem = "That photo could not be read.";
+  }
+  busy = false;
+  // The phone's camera app takes the camera away from the page; a live picture that did not come back is started again.
+  if (stream && stream.getVideoTracks()[0]?.readyState !== "live") { stopCamera(); cameraState = "starting"; startCamera(); }
+  renderCamera();
+}
+
+// ---------- Camera screen ----------
+
+function renderStatus() {
+  const live = cameraState === "live";
+  const here = currentFix();
+  const gps = here ? h("span", { style: `color:${here.accuracy <= 25 ? "var(--good)" : "var(--caution)"}` }, icon("pin"), `GPS ±${Math.round(here.accuracy)} m`)
+    : h("span", { style: "color:var(--caution)" }, icon("pin"), "No GPS");
+  $("status").replaceChildren(h("span", {}, icon("camera"), live ? "Camera" : "No camera"), gps, h("span", { class: "grow" }),
+    h("button", { class: "btn help", onclick: showGuide }, icon("info"), "Help"));
+}
+function renderCamera() {
+  renderStatus();
+  const today = photosOf(dayOf(Date.now()));
+  const live = cameraState === "live";
+  $("banner").hidden = !problem;
+  $("banner").textContent = problem ?? "";
+  $("shutter").disabled = !live || busy;
+  $("shutter").hidden = !live;
+
+  const nocam = $("nocam");
+  nocam.hidden = live || cameraState === "starting";
+  if (!nocam.hidden) {
+    nocam.replaceChildren(
+      h("h2", {}, cameraState === "denied" ? "The camera is not allowed" : "No camera here"),
+      h("p", {}, cameraState === "denied" ? "Allow the camera for this page in the browser's settings, then try again. Or take each photo in the phone's camera app."
+        : "This browser did not give the page a camera. You can still take each photo in the phone's camera app."),
+      h("button", { class: "btn primary big", onclick: () => $("picker").click() }, icon("camera"), "Take a photo"),
+      h("button", { class: "btn", onclick: () => { cameraState = "starting"; renderCamera(); startCamera(); } }, "Try the live camera again"));
+  }
+
+  const latest = $("latest");
+  latest.hidden = today.length === 0;
+  if (today.length) {
+    const waiting = today.filter(p => !isLabelled(p)).length;
+    latest.replaceChildren(
+      h("div", { class: "thumb", style: `background-image:url(${thumbURL(today[today.length - 1])})` }),
+      h("div", { class: "text" },
+        waiting ? h("div", { class: "line" }, icon("frame"), `${waiting} to label`)
+          : h("div", { class: "line", style: "color:var(--good)" }, icon("check"), "All labelled"),
+        h("div", { class: "sub" }, `${count(today.length, "photo")} today`)),
+      h("span", { style: "color:var(--secondary)" }, icon("next")));
+  }
+  $("alldays").replaceChildren(icon("calendar"), "All days");
+  // Photos live only on this phone until they are exported: how many are not is always in view.
+  const pending = photos.filter(p => !p.exported).length, exportNow = $("exportnow");
+  exportNow.hidden = photos.length === 0;
+  exportNow.style.color = pending ? "var(--caution)" : "";
+  exportNow.replaceChildren(icon(pending ? "export" : "check"), pending ? `${pending} not exported` : "All exported");
+}
+$("shutter").addEventListener("click", takePhoto);
+
+let noteTimer = 0;
+function note(text) {
+  const toast = $("toast");
+  toast.textContent = text; toast.hidden = false;
+  clearTimeout(noteTimer);
+  noteTimer = setTimeout(() => { toast.hidden = true; }, 4500);
+}
+/** A tap on the live picture asks the camera to focus there. Only some browsers let a page do that (Chrome on Android; not Safari on iPhone), and where it cannot be done the tap says so. */
+$("camera").addEventListener("click", async event => {
+  if (cameraState !== "live" || event.target.closest("button, .panel, #banner")) return;
+  const track = stream?.getVideoTracks()[0], modes = track?.getCapabilities?.().focusMode ?? [];
+  // "single-shot" focuses once on the point; a camera that only has "continuous" is asked to look again there.
+  const single = ["single-shot", "continuous"].find(m => modes.includes(m));
+  if (!single) { note("This phone's browser does not let the page focus where you tap. The camera focuses by itself."); return; }
+  const box = video.getBoundingClientRect(), scale = Math.min(box.width / video.videoWidth, box.height / video.videoHeight);
+  const width = video.videoWidth * scale, height = video.videoHeight * scale;
+  const x = (event.clientX - box.left - (box.width - width) / 2) / width, y = (event.clientY - box.top - (box.height - height) / 2) / height;
+  if (x < 0 || x > 1 || y < 0 || y > 1) return;
+  const ring = $("ring");
+  ring.style.left = `${event.clientX}px`; ring.style.top = `${event.clientY}px`; ring.hidden = false;
+  setTimeout(() => { ring.hidden = true; }, 900);
+  try { await track.applyConstraints({ advanced: [{ pointsOfInterest: [{ x, y }], focusMode: single }] }); }
+  catch { try { await track.applyConstraints({ advanced: [{ focusMode: single }] }); } catch {} }
+});
+$("latest").addEventListener("click", () => { const day = dayOf(Date.now()); openLabel(day, photosOf(day).length - 1); });
+$("picker").addEventListener("change", event => { importPhoto(event.target.files[0]); event.target.value = ""; });
+
+// ---------- Labelling ----------
+// One rule for every chip in the plant row, the typed one included: with a box selected, the chip
+// says what that box is; either way, it says what the boxes drawn next will be. A typed label
+// differs only in needing a name, which is asked for at the moment a box is to get it.
+
+const L = {
+  day: null, index: 0,
+  selected: null,
+  /** The box waiting for its label to be typed: { rect } just drawn, or { id } already in the photo. */
+  naming: null,
+  /** What the next box will be; null means a label typed for each box once it is drawn. */
+  nextType: PRESETS[0].id, nextStage: "unsure",
+  image: null, imageFor: null,
+  zoom: 1, panX: 0, panY: 0,
+};
+const list = () => photosOf(L.day);
+const current = () => list()[L.index];
+const selectedBox = () => current()?.boxes.find(b => b.id === L.selected);
+const activeType = () => selectedBox()?.weedTypeID ?? L.nextType;
+const selectedTyped = () => { const box = selectedBox(); return box && !preset(box.weedTypeID) ? box.weedTypeID : null; };
+const newId = () => (crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`).toUpperCase();
+
+function change(edit) {
+  const photo = current();
+  if (!photo) return;
+  edit(photo);
+  // What was exported no longer says what the photo says now.
+  photo.exported = false;
+  savePhoto(photo);
+  renderLabel();
+}
+function setType(id) {
+  L.nextType = id;
+  if (L.selected) change(photo => { photo.boxes.find(b => b.id === L.selected).weedTypeID = id; }); else renderLabel();
+}
+function typeLabels() {
+  L.nextType = null;
+  if (L.selected) askName({ id: L.selected }); else renderLabel();
+}
+function setStage(stage) {
+  L.nextStage = stage;
+  if (L.selected) change(photo => { photo.boxes.find(b => b.id === L.selected).stage = stage; }); else renderLabel();
+}
+function addBox(rect) {
+  if (L.nextType === null) { L.selected = null; askName({ rect }); return; }
+  const box = { id: newId(), weedTypeID: L.nextType, stage: L.nextStage, ...rect };
+  L.selected = box.id;
+  change(photo => { photo.boxes.push(box); photo.isWeedFree = false; });
+}
+/** Gives the waiting box the label typed for it. With nothing typed, a box just drawn is dropped and one already in the photo keeps its label. */
+function finishNaming(text) {
+  const naming = L.naming, label = typedLabel(text);
+  L.naming = null;
+  closeDialog();
+  if (!naming || !label) { renderLabel(); return; }
+  if (naming.rect) {
+    const box = { id: newId(), weedTypeID: label, stage: L.nextStage, ...naming.rect };
+    L.selected = box.id;
+    change(photo => { photo.boxes.push(box); photo.isWeedFree = false; });
+  } else {
+    change(photo => { const box = photo.boxes.find(b => b.id === naming.id); if (box) box.weedTypeID = label; });
+  }
+}
+function askName(naming) {
+  L.naming = naming;
+  renderLabel();
+  const isNew = Boolean(naming.rect);
+  const input = h("input", { type: "text", placeholder: "Plant name", autocomplete: "off", autocorrect: "off", autocapitalize: "sentences", enterkeyhint: "done", maxlength: "40", value: isNew ? "" : selectedTyped() ?? "" });
+  const add = h("button", { class: "btn primary", onclick: () => finishNaming(input.value) }, icon("check"), isNew ? "Add" : "Change");
+  const sync = () => { add.disabled = !typedLabel(input.value); };
+  input.addEventListener("input", sync);
+  input.addEventListener("keydown", event => { if (event.key === "Enter" && !add.disabled) finishNaming(input.value); });
+  sync();
+  openDialog(h("div", { class: "caption" }, isNew ? "LABEL THE NEW BOX" : "LABEL THE SELECTED BOX"), input,
+    h("div", { class: "actions" }, h("button", { class: "btn", onclick: () => finishNaming("") }, icon("x"), "Cancel"), add));
+  input.focus();
+  input.select();
+}
+function deleteBox() {
+  if (!L.selected) return;
+  const id = L.selected;
+  L.selected = null;
+  change(photo => { photo.boxes = photo.boxes.filter(b => b.id !== id); });
+}
+function toggleWeedFree() { change(photo => { if (!photo.boxes.length) photo.isWeedFree = !photo.isWeedFree; }); }
+/** The nearest later photo nobody has labelled yet, going round to the start; -1 when the one shown is the only one left, or none are. */
+function nextToLabel() {
+  const all = list();
+  for (let step = 1; step < all.length; step++) { const i = (L.index + step) % all.length; if (!isLabelled(all[i])) return i; }
+  return -1;
+}
+async function deletePhoto() {
+  const photo = current();
+  if (!photo) return;
+  await removePhotos([photo]);
+  if (!list().length) { closeLabel(); return; }
+  showPhoto(Math.min(L.index, list().length - 1));
+}
+
+async function showPhoto(index) {
+  L.index = index; L.selected = null; L.naming = null; L.zoom = 1; L.panX = L.panY = 0;
+  const photo = current();
+  renderLabel();
+  $("list").querySelector(".row.on")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  if (!photo || L.imageFor === photo.id) return;
+  L.image = null; L.imageFor = photo.id;
+  draw();
+  const blob = await photoBlob(photo.id);
+  if (!blob || L.imageFor !== photo.id) return;
+  const image = await decoded(blob).catch(() => null);
+  if (L.imageFor === photo.id) { L.image = image; draw(); }
+}
+function openLabel(day, index) {
+  if (!photosOf(day).length) return;
+  L.day = day; L.imageFor = null;
+  $("camera").hidden = true; $("days").hidden = true; $("label").hidden = false;
+  stopCamera();
+  showPhoto(Math.max(0, index));
+  if (localStorage.getItem("labelguide") !== "seen") showLabelGuide();
+}
+function closeLabel() {
+  $("label").hidden = true; $("camera").hidden = false;
+  L.image = null; L.imageFor = null;
+  cameraState = "starting";
+  renderCamera();
+  startCamera();
+}
+
+function chip(text, on, color, action, leading) {
+  return h("button", { class: on ? "chip on" : "chip", style: `--chip:${color ?? "#fff"}`, onclick: action }, leading, text);
+}
+function renderLabel() {
+  const photo = current(), all = list();
+  const done = all.filter(isLabelled).length;
+  $("toolbar").replaceChildren(
+    h("button", { class: "btn", onclick: closeLabel }, icon("back"), "Camera"),
+    h("div", { class: "title" }, h("b", {}, "Label photos"),
+      h("small", {}, `${new Date(L.day + "T12:00:00").toLocaleDateString(undefined, { day: "numeric", month: "short" })} · ${done} of ${all.length} labelled`)),
+    h("button", { class: "btn", onclick: exportAll, disabled: !photos.length }, icon("export"), h("span", {}, "Export ", h("span", { class: "wide" }, "all days"))));
+  $("listcount").textContent = `${done} of ${all.length} labelled`;
+
+  $("list").replaceChildren(...all.map((item, index) => {
+    const kinds = usedLabels(item);
+    const name = kinds.length === 1 ? [labelGlyph(kinds[0]), preset(kinds[0])?.short ?? kinds[0]]
+      : kinds.length ? kinds.slice(0, 4).map(id => labelGlyph(id)).concat(kinds.length > 4 ? `+${kinds.length - 4}` : [])
+      : [item.isWeedFree ? "Negative" : "Not labelled"];
+    return h("button", { class: index === L.index ? "row on" : "row", onclick: () => showPhoto(index) },
+      h("div", { class: "thumb", style: `background-image:url(${thumbURL(item)})` }),
+      h("div", { class: "text" }, h("div", { class: kinds.length || item.isWeedFree ? "name" : "name dim" }, name),
+        h("div", { class: "cap" }, clock(item.at) + (item.boxes.length ? ` · ${count(item.boxes.length, "box", "boxes")}` : ""))),
+      isLabelled(item) ? h("span", { class: "tick" }, icon("check")) : null);
+  }));
+
+  const type = activeType(), typed = selectedTyped();
+  const typing = selectedBox() ? typed !== null : L.nextType === null;
+  const stageApplies = preset(type)?.isWeed !== false;
+  const stage = selectedBox()?.stage ?? L.nextStage;
+  const next = nextToLabel();
+  // One line that says what to do with the photo as it is now, so that nobody has to work the screen out in the field.
+  // Each message has to fit in two lines beside Help on the narrowest phone.
+  const say = (...parts) => parts.map(part => typeof part === "string" ? part : h("b", {}, part[0]));
+  const onward = next >= 0 ? "Next" : "Done";
+  $("guide").replaceChildren(
+    h("div", { class: "text" }, !photo ? ""
+      : L.selected ? say("Tap a plant or stage to ", ["change this box"], ", or drag a corner.")
+      : photo.isWeedFree ? say("Marked ", ["negative"], ": no weeds here. Tap ", [onward], ".")
+      : photo.boxes.length ? say("Box every weed, then tap ", [onward], ". Tap a box to change it.")
+      : say("Pick a plant, then ", ["drag a box"], ". No weeds? Tap ", ["Negative"], ".")),
+    h("button", { class: "btn help", onclick: showLabelGuide }, icon("info"), "Help"));
+  $("inspector").replaceChildren(
+    // What is about the whole photo comes first, in one row: whether it has a weed at all (the first thing to
+    // decide), deleting it, and going on. Negative is not one of the plant chips because it is not a box.
+    h("div", { class: "line photo" },
+      h("button", { id: "weedfree", class: photo?.isWeedFree ? "btn good" : "btn", onclick: toggleWeedFree, disabled: !photo || photo.boxes.length > 0 },
+        icon(photo?.isWeedFree ? "check" : "leaf"), h("span", {}, "Negative", h("span", { class: "extra" }, " (no weeds)"))),
+      h("span", { class: "grow" }),
+      h("button", { class: "btn danger", "aria-label": "Delete photo", onclick: askDeletePhoto }, icon("trash"), h("span", { class: "wide" }, "Delete photo")),
+      next >= 0 ? h("button", { class: "btn primary", onclick: () => showPhoto(next) }, icon("arrow"), "Next")
+        : h("button", { class: "btn primary", onclick: closeLabel }, icon("check"), "Done")),
+    // Below it, what is about one box.
+    h("div", { class: "line" }, h("span", { class: "caption" }, "PLANT"), h("div", { class: "chips" },
+      PRESETS.map(p => chip(p.short, type === p.id, p.color, () => setType(p.id), glyph(p.glyph, type === p.id ? "#000" : p.color))),
+      chip(typed ?? "Type label", typing, TYPED_COLOR, typeLabels, icon("type")))),
+    h("div", { class: "line" }, h("span", { class: "caption" }, "STAGE"),
+      h("div", { class: stageApplies ? "chips" : "chips dimmed" }, STAGES.map(([id, title]) => chip(title, stage === id, null, () => setStage(id)))),
+      h("button", { class: "btn square danger", "aria-label": "Delete box", onclick: deleteBox, disabled: !L.selected }, icon("trash"))));
+  draw();
+}
+function askDeletePhoto() {
+  // Boxes are work; a photo without any goes at once, as a bad shot should.
+  if (!current()?.boxes.length) { deletePhoto(); return; }
+  openDialog(h("h3", {}, "Delete this photo and its boxes?"),
+    h("div", { class: "actions" }, h("button", { class: "btn", onclick: closeDialog }, "Cancel"),
+      h("button", { class: "btn danger", onclick: () => { closeDialog(); deletePhoto(); } }, icon("trash"), "Delete photo")));
+}
+/** The kinds of plant boxed in a photo: the presets in their order, then typed labels by name. */
+function usedLabels(photo) {
+  const used = new Set(photo.boxes.map(b => b.weedTypeID));
+  const presets = PRESETS.map(p => p.id);
+  return presets.filter(id => used.has(id)).concat([...used].filter(id => !presets.includes(id)).sort());
+}
+
+// ---------- The photo with its boxes ----------
+// One finger (or a mouse drag) edits boxes; two fingers or the wheel zoom and move the photo.
+// Boxes are kept in fractions of the photo's width and height from its top-left corner.
+
+const canvas = $("canvas"), context = canvas.getContext("2d");
+/** Where the photo is on the canvas, in CSS pixels. */
+function frame() {
+  const photo = current(), W = canvas.clientWidth, H = canvas.clientHeight;
+  if (!photo || !W || !H) return null;
+  const fit = Math.min(W / photo.width, H / photo.height);
+  const maxZoom = Math.max(1, 1 / fit) * 1.5;
+  L.zoom = Math.min(Math.max(L.zoom, 1), maxZoom);
+  const width = photo.width * fit * L.zoom, height = photo.height * fit * L.zoom;
+  const slackX = Math.max(0, (width - W) / 2), slackY = Math.max(0, (height - H) / 2);
+  L.panX = Math.min(Math.max(L.panX, -slackX), slackX);
+  L.panY = Math.min(Math.max(L.panY, -slackY), slackY);
+  return { left: (W - width) / 2 + L.panX, top: (H - height) / 2 + L.panY, width, height };
+}
+const toScreen = (f, box) => ({ x: f.left + box.x * f.width, y: f.top + box.y * f.height, width: box.width * f.width, height: box.height * f.height });
+const toFraction = (f, x, y) => ({ x: Math.min(Math.max((x - f.left) / f.width, 0), 1), y: Math.min(Math.max((y - f.top) / f.height, 0), 1) });
+const corners = r => [[r.x, r.y], [r.x + r.width, r.y], [r.x + r.width, r.y + r.height], [r.x, r.y + r.height]];
+
+/** The edit in progress: { kind: "create" | "move" | "resize", ... , rect } in fractions; the photo only hears of it on release. */
+let drag = null;
+function draw() {
+  const ratio = window.devicePixelRatio || 1, W = canvas.clientWidth, H = canvas.clientHeight;
+  if (canvas.width !== Math.round(W * ratio) || canvas.height !== Math.round(H * ratio)) { canvas.width = Math.round(W * ratio); canvas.height = Math.round(H * ratio); }
+  context.setTransform(ratio, 0, 0, ratio, 0, 0);
+  context.clearRect(0, 0, W, H);
+  const f = frame(), photo = current();
+  if (!f || !photo) return;
+  if (L.image) context.drawImage(L.image, f.left, f.top, f.width, f.height);
+  else { context.fillStyle = "rgba(255,255,255,.06)"; context.fillRect(f.left, f.top, f.width, f.height); }
+
+  const shown = photo.boxes.map(box => drag?.rect && drag.id === box.id ? { ...box, ...drag.rect } : box);
+  // A box whose label is being typed is shown, grey, though the photo does not have it yet.
+  if (L.naming?.rect) shown.push({ id: "draft", weedTypeID: "", ...L.naming.rect });
+  for (const box of shown) {
+    const r = toScreen(f, box), color = labelColor(box.weedTypeID), selected = box.id === L.selected || box.id === "draft";
+    context.fillStyle = color + "1f";
+    context.fillRect(r.x, r.y, r.width, r.height);
+    context.strokeStyle = color; context.lineWidth = selected ? 3 : 2; context.setLineDash([]);
+    context.strokeRect(r.x, r.y, r.width, r.height);
+    if (selected) for (const [x, y] of corners(r)) {
+      context.beginPath(); context.arc(x, y, 7, 0, Math.PI * 2);
+      context.fillStyle = "#fff"; context.fill(); context.lineWidth = 2; context.stroke();
+    }
+  }
+  if (drag?.kind === "create" && drag.rect) {
+    const r = toScreen(f, drag.rect);
+    context.strokeStyle = "#fff"; context.lineWidth = 2; context.setLineDash([6, 4]);
+    context.strokeRect(r.x, r.y, r.width, r.height);
+    context.setLineDash([]);
+  }
+}
+new ResizeObserver(draw).observe($("stage"));
+
+const pointers = new Map();
+let pinch = null;
+const point = event => { const b = canvas.getBoundingClientRect(); return { x: event.clientX - b.left, y: event.clientY - b.top }; };
+const spanning = (a, b) => ({ x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(a.x - b.x), height: Math.abs(a.y - b.y) });
+
+function beginDrag(at) {
+  const f = frame(), photo = current();
+  if (!f || !photo || !L.image) return null;
+  const selected = selectedBox();
+  if (selected) {
+    const all = corners(toScreen(f, selected));
+    const nearest = all.map(([x, y], i) => [Math.hypot(x - at.x, y - at.y), i]).sort((a, b) => a[0] - b[0])[0];
+    if (nearest[0] <= 24) {
+      const [x, y] = all[(nearest[1] + 2) % 4];
+      return { kind: "resize", id: selected.id, anchor: toFraction(f, x, y), start: at };
+    }
+  }
+  // The topmost box under the finger, with a little slack so thin boxes can still be hit.
+  const hit = [...photo.boxes].reverse().find(box => { const r = toScreen(f, box); return at.x >= r.x - 8 && at.x <= r.x + r.width + 8 && at.y >= r.y - 8 && at.y <= r.y + r.height + 8; });
+  if (hit) return { kind: "move", id: hit.id, original: { x: hit.x, y: hit.y, width: hit.width, height: hit.height }, start: at };
+  return { kind: "create", origin: toFraction(f, at.x, at.y), start: at };
+}
+canvas.addEventListener("pointerdown", event => {
+  canvas.setPointerCapture(event.pointerId);
+  pointers.set(event.pointerId, point(event));
+  if (pointers.size === 2) {
+    // A second finger turns the gesture into moving the photo; whatever the first began is dropped.
+    drag = null;
+    const [a, b] = [...pointers.values()], f = frame();
+    const middle = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    if (f) pinch = { distance: Math.hypot(a.x - b.x, a.y - b.y) || 1, zoom: L.zoom, under: { x: (middle.x - f.left) / f.width, y: (middle.y - f.top) / f.height } };
+  } else if (pointers.size === 1) {
+    drag = beginDrag(point(event));
+  }
+});
+function zoomAbout(zoom, under, to) {
+  L.zoom = zoom; L.panX = L.panY = 0;
+  let f = frame();
+  if (!f) return;
+  // Put the point of the photo that was under the fingers back under them.
+  L.panX = to.x - (f.left + under.x * f.width); L.panY = to.y - (f.top + under.y * f.height);
+  draw();
+}
+canvas.addEventListener("pointermove", event => {
+  if (!pointers.has(event.pointerId)) return;
+  pointers.set(event.pointerId, point(event));
+  if (pinch && pointers.size >= 2) {
+    const [a, b] = [...pointers.values()];
+    zoomAbout(pinch.zoom * Math.hypot(a.x - b.x, a.y - b.y) / pinch.distance, pinch.under, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+    return;
+  }
+  if (!drag) return;
+  const at = point(event), f = frame();
+  if (!drag.moved && Math.hypot(at.x - drag.start.x, at.y - drag.start.y) < 6) return;
+  if (!drag.moved && drag.kind === "move" && drag.id !== L.selected) { L.selected = drag.id; renderLabel(); }
+  drag.moved = true;
+  const here = toFraction(f, at.x, at.y);
+  if (drag.kind === "create") drag.rect = spanning(drag.origin, here);
+  else if (drag.kind === "resize") drag.rect = spanning(drag.anchor, here);
+  else {
+    const o = drag.original;
+    const dx = Math.min(Math.max((at.x - drag.start.x) / f.width, -o.x), 1 - o.x - o.width);
+    const dy = Math.min(Math.max((at.y - drag.start.y) / f.height, -o.y), 1 - o.y - o.height);
+    drag.rect = { x: o.x + dx, y: o.y + dy, width: o.width, height: o.height };
+  }
+  draw();
+});
+function release(event) {
+  if (!pointers.delete(event.pointerId)) return;
+  if (pinch) { if (pointers.size < 2) pinch = null; return; }
+  const finished = drag, f = frame();
+  drag = null;
+  if (!finished || !f) return;
+  if (!finished.moved) {
+    // A tap selects the box under it, or lets go of the selection.
+    L.selected = finished.kind === "create" ? null : finished.kind === "move" ? finished.id : L.selected;
+    renderLabel();
+    return;
+  }
+  const r = finished.rect;
+  if (r && r.width * f.width >= 10 && r.height * f.height >= 10) {
+    if (finished.kind === "create") addBox(r);
+    else change(photo => { const box = photo.boxes.find(b => b.id === finished.id); if (box) Object.assign(box, r); });
+  } else draw();
+}
+canvas.addEventListener("pointerup", release);
+canvas.addEventListener("pointercancel", event => { pointers.delete(event.pointerId); drag = null; if (pointers.size < 2) pinch = null; draw(); });
+canvas.addEventListener("wheel", event => {
+  event.preventDefault();
+  const f = frame(), at = point(event);
+  if (f) zoomAbout(L.zoom * Math.exp(-event.deltaY / 300), { x: (at.x - f.left) / f.width, y: (at.y - f.top) / f.height }, at);
+}, { passive: false });
+
+// ---------- Dialogs ----------
+
+function openDialog(...content) { $("dialog").replaceChildren(...content.filter(Boolean)); $("overlay").hidden = false; }
+function closeDialog() { $("overlay").hidden = true; $("dialog").replaceChildren(); }
+
+/** The whole of how to use the page, short enough to read once: shown the first time the page is opened on a phone, and from Help after that. */
+function showGuide() {
+  // A phone's browser may clear a page's data after a week unused; a Home Screen app keeps it.
+  const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+  const step = (title, text) => h("li", {}, h("b", {}, title), " ", h("span", {}, text));
+  openDialog(h("h3", {}, "How to use"),
+    standalone ? null : h("p", { class: "warn" }, "Before going out, add this page to the Home Screen (Share or menu, then Add to Home Screen) and open it from there once while you have internet. After that it needs no network."),
+    h("ol", {},
+      step("Take photos.", "Tap the white button and hold the phone still until the photo shows at the bottom left. Stay at least 20 cm from the plant. Take some of nearby pasture with no weeds as well."),
+      step("Label them.", "Tap the photo at the bottom left, choose the plant, and drag a box around each one. If a photo has no weeds, tap Negative. This can wait: photos stay in the list until you label them."),
+      step("Export every day.", "Tap the yellow “not exported” button, then save or send the ZIP. Until then the photos exist only on this phone.")),
+    h("div", { class: "actions" }, h("button", { class: "btn primary", onclick: () => { localStorage.setItem("guide", "seen"); closeDialog(); } }, icon("check"), "Got it")));
+}
+/** How to label, with what each label means: shown the first time the label screen is opened on a phone, and from its Help after that. */
+function showLabelGuide() {
+  const step = (title, text) => h("li", {}, h("b", {}, title), " ", h("span", {}, text));
+  openDialog(h("h3", {}, "How to label"),
+    h("ol", {},
+      step("Choose the plant, then drag a box around it.", "One box for each plant or clump. A photo can hold both weeds."),
+      step("No weeds in the photo? Tap Negative.", "Do not draw a box. Negative photos of clean pasture are wanted too: they teach the model what is not a weed."),
+      step("To change a box, tap it.", "Then drag a corner, tap another plant or stage, or delete it with the bin."),
+      step("Tap Next.", "It goes to the next photo still to label.")),
+    h("p", { class: "dim" }, h("b", {}, "Look-alike"), " is for a plant that could be taken for one of the weeds but is not. ",
+      h("b", {}, "Type label"), " is for any other plant: type its name. ",
+      h("b", {}, "Stage"), ": Early for a young plant, Mature for a grown one, Unsure if you cannot tell."),
+    h("p", { class: "dim" }, "Two fingers zoom and move the photo."),
+    h("div", { class: "actions" }, h("button", { class: "btn primary", onclick: () => { localStorage.setItem("labelguide", "seen"); closeDialog(); } }, icon("check"), "Got it")));
+}
+
+// ---------- All days ----------
+
+function showDays() {
+  const days = [...new Set(photos.map(p => p.day))].sort().reverse();
+  $("daylist").replaceChildren(...(days.length ? days.map(day => {
+    const all = photosOf(day);
+    return h("div", { class: "day" },
+      h("button", { class: "open", onclick: () => openLabel(day, 0) }, h("span", { style: "color:var(--secondary)" }, icon("calendar")),
+        h("div", {}, h("b", {}, dayTitle(day)), h("small", {}, `${count(all.length, "photo")} · ${all.filter(isLabelled).length} labelled`)),
+        h("span", { style: "color:var(--secondary)" }, icon("next"))),
+      h("button", { class: "btn square danger", "aria-label": "Delete day", onclick: () => askDeleteDay(day) }, icon("trash")));
+  }) : [h("div", { class: "empty" }, "No photos yet")]));
+  renderFoot();
+  $("days").hidden = false;
+}
+/** Says whether the app's own files are kept on the phone, which is what lets it open with no network, and how much room the photos take. */
+async function renderFoot() {
+  const kept = "caches" in window && Boolean(await caches.match("./", { ignoreSearch: true }).catch(() => null) ?? await caches.match("./index.html").catch(() => null));
+  const estimate = await navigator.storage?.estimate?.().catch(() => null);
+  const promised = await navigator.storage?.persisted?.().catch(() => null);
+  $("daysfoot").replaceChildren(
+    h("div", { style: `color:${kept ? "var(--good)" : "var(--caution)"}` }, kept ? "Ready to use without internet." : "Not ready for use without internet: open this page once more while online."),
+    promised == null ? "" : h("div", { style: `color:${promised ? "var(--good)" : "var(--caution)"}` },
+      promised ? "This browser keeps the photos until you delete them." : "This browser may clear the photos if the phone runs short of space. Add the page to the Home Screen, and export often."),
+    h("div", {}, stream ? `Live picture ${video.videoWidth}×${video.videoHeight}; photos are ${stills ? "still photos" : stills === false ? "frames of it (this browser gave no still photo)" : "not tried yet"}; focus on tap ${stream.getVideoTracks()[0]?.getCapabilities?.().focusMode?.length ? "available" : "not available"}. ` : ""),
+    h("div", {}, estimate?.quota ? `Photos use ${(estimate.usage / 1e9).toFixed(2)} GB of the ${(estimate.quota / 1e9).toFixed(0)} GB this browser allows. ` : "", `Version ${VERSION}`));
+}
+function askDeleteDay(day) {
+  const all = photosOf(day), pending = all.filter(p => !p.exported).length;
+  // Boxes are hours of work, so deleting them always asks first.
+  openDialog(h("h3", {}, "Delete this day?"),
+    h("p", { class: "dim" }, `Its ${count(all.length, "photo")} and their boxes will be removed from this phone.`),
+    pending ? h("p", { class: "warn" }, pending === all.length ? "None of them has been exported." : `${pending} of them ${pending === 1 ? "has" : "have"} not been exported.`) : null,
+    h("div", { class: "actions" }, h("button", { class: "btn", onclick: closeDialog }, "Cancel"),
+      h("button", { class: "btn danger", onclick: async () => { closeDialog(); await removePhotos(all); showDays(); renderCamera(); } }, icon("trash"), "Delete day")));
+}
+$("alldays").addEventListener("click", showDays);
+$("daysclose").addEventListener("click", () => { $("days").hidden = true; });
+
+// ---------- Export ----------
+// One ZIP with everything labelled on this phone, laid out exactly like the iPad app's Export
+// folder: the photos, their boxes in COCO and in YOLO format, and a map file.
+
+const exportName = photo => { const d = new Date(photo.at), two = n => String(n).padStart(2, "0"); return `${photo.day}_${two(d.getHours())}${two(d.getMinutes())}${two(d.getSeconds())}_${photo.id.slice(-6)}.jpg`; };
+/** The part of a box that lies on the photo, in fractions of it; null when none does. */
+function visiblePart(box) {
+  const x = Math.max(box.x, 0), y = Math.max(box.y, 0), right = Math.min(box.x + box.width, 1), bottom = Math.min(box.y + box.height, 1);
+  return right > x && bottom > y ? { x, y, width: right - x, height: bottom - y } : null;
+}
+function buildDataset(all) {
+  // The project's own labels always come first with the same ids. Labels typed in the field
+  // follow in alphabetical order, each once whatever its capitals.
+  const spellings = new Map();
+  for (const box of all.flatMap(p => p.boxes)) if (!preset(box.weedTypeID) && !spellings.has(box.weedTypeID.toLowerCase())) spellings.set(box.weedTypeID.toLowerCase(), box.weedTypeID);
+  const categories = PRESETS.map(p => ({ name: p.name, supercategory: p.isWeed ? "weed" : "not_weed" }))
+    .concat([...spellings.keys()].sort().map(key => ({ name: spellings.get(key), supercategory: "other" })))
+    .map((c, i) => ({ id: i + 1, ...c }));
+  const categoryId = id => categories.find(c => c.name.toLowerCase() === labelName(id).toLowerCase())?.id;
+
+  const images = [], annotations = [], labels = [];
+  for (const photo of all.filter(isLabelled)) {
+    const id = images.length + 1, name = exportName(photo), where = photo.location;
+    images.push({ id, file_name: name, width: photo.width, height: photo.height, date_captured: new Date(photo.at).toISOString(), run_id: photo.day,
+      weed_free: photo.boxes.length === 0, ...(where ? { latitude: where.latitude, longitude: where.longitude, ...(where.altitude != null ? { altitude: where.altitude } : {}), location_accuracy_m: Math.round(where.accuracy * 10) / 10 } : {}),
+      source: "phone", ...(photo.capture ? { capture: photo.capture } : {}) });
+    const lines = [];
+    for (const box of photo.boxes) {
+      const category = categoryId(box.weedTypeID), r = visiblePart(box);
+      if (!category || !r) continue;
+      const bbox = [r.x * photo.width, r.y * photo.height, r.width * photo.width, r.height * photo.height].map(v => Math.round(v * 10) / 10);
+      annotations.push({ id: annotations.length + 1, image_id: id, category_id: category, bbox, area: Math.round(bbox[2] * bbox[3]), iscrowd: 0,
+        ...(preset(box.weedTypeID)?.isWeed === false ? {} : { growth_stage: box.stage }) });
+      lines.push(`${category - 1} ${(r.x + r.width / 2).toFixed(6)} ${(r.y + r.height / 2).toFixed(6)} ${r.width.toFixed(6)} ${r.height.toFixed(6)}`);
+    }
+    labels.push({ name: name.replace(/\.jpg$/, ".txt"), text: lines.join("\n") });
+  }
+  const features = all.map(photo => {
+    const used = new Set(photo.boxes.map(b => categoryId(b.weedTypeID)));
+    const where = photo.location;
+    return { type: "Feature",
+      geometry: where ? { type: "Point", coordinates: [where.longitude, where.latitude, ...(where.altitude != null ? [where.altitude] : [])] } : null,
+      properties: { labels: categories.filter(c => used.has(c.id)).map(c => c.name), labelled: isLabelled(photo), weed_free: photo.isWeedFree,
+        time: new Date(photo.at).toISOString(), run_id: photo.day, photo: exportName(photo), folder: isLabelled(photo) ? "images" : "unlabelled", boxes: photo.boxes.length, ...(where ? { accuracy_m: Math.round(where.accuracy * 10) / 10 } : {}) } };
+  });
+  return { categories, images, annotations, labels, geojson: { type: "FeatureCollection", features } };
+}
+const GUIDE = `Weed Annotator export (phone)
+
+images/           The labelled photos, named <day>_<time>_<id>.jpg. A photo marked
+                  Negative (no weeds) is here with no boxes.
+unlabelled/       Photos nobody has labelled yet, included so that nothing taken is
+                  left only on the phone. They are not in annotations.json or labels/.
+annotations.json  The boxes in COCO format. Each weed box has growth_stage (early, mature
+                  or unsure); a look-alike box has none. Each image has date_captured,
+                  run_id (the day), source,
+                  capture (how the picture was made: "app" the phone's camera app,
+                  "still" a still photo taken by the web page, "frame" a frame of its
+                  live video, the least sharp of the three), and latitude, longitude,
+                  altitude and location_accuracy_m when the phone knew where it was.
+labels/           The same boxes in YOLO format, one .txt per photo:
+                  class x_centre y_centre width height, as fractions of the photo.
+                  The growth stage is not in these files.
+classes.txt       The class names for labels/: the first line is class 0.
+photos.geojson    One point per photo taken, labelled or not, for a map.
+
+Categories 1 to 3 are always the same. Labels typed in the field follow in alphabetical
+order, so their numbers can change from one export to the next: match them by name.
+The position is the phone's own, read when the photo was taken; it is not inside the photos.
+`;
+
+const CRC = (() => { const table = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; table[n] = c; } return table; })();
+function crc32(bytes) { let c = 0xffffffff; for (let i = 0; i < bytes.length; i++) c = CRC[(c ^ bytes[i]) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; }
+/** A ZIP of files stored as they are: photos do not compress, and storing keeps a phone's memory free. Each entry: { name, data: Blob or string, at }. */
+async function zip(entries) {
+  const encoder = new TextEncoder(), parts = [], central = [];
+  let offset = 0;
+  for (const entry of entries) {
+    const data = typeof entry.data === "string" ? new Blob([entry.data]) : entry.data;
+    const crc = crc32(new Uint8Array(await data.arrayBuffer()));
+    const name = encoder.encode(entry.name), d = new Date(entry.at ?? Date.now());
+    const time = d.getHours() << 11 | d.getMinutes() << 5 | d.getSeconds() >> 1, date = (d.getFullYear() - 1980) << 9 | (d.getMonth() + 1) << 5 | d.getDate();
+    // Shared by the file's own header and its entry in the directory at the end.
+    const fields = new DataView(new ArrayBuffer(26));
+    [20, 0x0800, 0, time, date].forEach((v, i) => fields.setUint16(i * 2, v, true));
+    fields.setUint32(10, crc, true); fields.setUint32(14, data.size, true); fields.setUint32(18, data.size, true);
+    fields.setUint16(22, name.length, true);
+    const local = new Uint8Array(30 + name.length);
+    new DataView(local.buffer).setUint32(0, 0x04034b50, true);
+    local.set(new Uint8Array(fields.buffer), 4); local.set(name, 30);
+    const record = new Uint8Array(46 + name.length), view = new DataView(record.buffer);
+    view.setUint32(0, 0x02014b50, true); view.setUint16(4, 20, true);
+    record.set(new Uint8Array(fields.buffer), 6); view.setUint32(42, offset, true); record.set(name, 46);
+    parts.push(local, data); central.push(record);
+    offset += local.length + data.size;
+  }
+  const size = central.reduce((sum, r) => sum + r.length, 0);
+  if (offset + size > 0xfffffff0 || entries.length > 0xfffe) throw new Error("too large");
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, entries.length, true); end.setUint16(10, entries.length, true);
+  end.setUint32(12, size, true); end.setUint32(16, offset, true);
+  return new Blob([...parts, ...central, end.buffer], { type: "application/zip" });
+}
+
+let exported = null;
+/** Records that these photos are in a ZIP the user saved or sent. */
+async function markExported(ids) {
+  const changed = photos.filter(p => ids.has(p.id) && !p.exported);
+  for (const photo of changed) photo.exported = true;
+  await store("photos", "readwrite", s => { for (const photo of changed) s.put(photo); }).catch(() => {});
+  renderCamera();
+  if (!$("label").hidden) renderLabel();
+}
+/** Every photo on this phone goes into the ZIP, labelled or not, so that an export is also a complete copy. */
+async function exportAll() {
+  openDialog(h("h3", {}, "Exporting…"), h("p", { class: "dim" }, "Keep this page open."));
+  try {
+    const all = [...photos].sort((a, b) => a.at - b.at), data = buildDataset(all), labelled = all.filter(isLabelled);
+    const entries = [];
+    for (const photo of all) {
+      const blob = await photoBlob(photo.id);
+      if (!blob) throw new Error("missing photo");
+      entries.push({ name: `Export/${isLabelled(photo) ? "images" : "unlabelled"}/${exportName(photo)}`, data: blob, at: photo.at });
+    }
+    for (const label of data.labels) entries.push({ name: `Export/labels/${label.name}`, data: label.text });
+    entries.push({ name: "Export/annotations.json", data: JSON.stringify({ annotations: data.annotations, categories: data.categories, images: data.images }, null, 2) },
+      { name: "Export/classes.txt", data: data.categories.map(c => c.name).join("\n") },
+      { name: "Export/photos.geojson", data: JSON.stringify(data.geojson, null, 2) }, { name: "Export/README.txt", data: GUIDE });
+    const blob = await zip(entries);
+    const d = new Date(), two = n => String(n).padStart(2, "0");
+    const file = new File([blob], `WeedAnnotator-${d.getFullYear()}${two(d.getMonth() + 1)}${two(d.getDate())}-${two(d.getHours())}${two(d.getMinutes())}.zip`, { type: "application/zip" });
+    if (exported) URL.revokeObjectURL(exported.url);
+    exported = { file, url: URL.createObjectURL(file) };
+    const ids = new Set(all.map(p => p.id)), days = new Set(all.map(p => p.day)).size, unlabelled = all.length - labelled.length;
+    const located = all.filter(p => p.location).length, missing = all.length - located;
+    const canShare = navigator.canShare?.({ files: [file] });
+    // The ZIP exists only in this page's memory until one of the two buttons puts it somewhere.
+    const note = h("p", { class: "dim" }, `One ZIP file, ${(file.size / 1e6).toFixed(file.size < 1e7 ? 1 : 0)} MB. It is not saved yet: tap Save or Send.`);
+    const saved = () => { markExported(ids); note.style.color = "var(--good)"; note.textContent = "Saved. These photos now count as exported; they also stay on this phone."; };
+    openDialog(
+      h("h3", {}, h("span", { style: "color:var(--good);display:inline-flex" }, icon("check")),
+        labelled.length ? `${count(labelled.length, "labelled photo")} from ${count(days, "day")}` : `${count(all.length, "photo")}, none labelled yet`),
+      unlabelled && labelled.length ? h("p", { class: "dim" }, `${count(unlabelled, "photo")} not labelled yet ${unlabelled === 1 ? "is" : "are"} included in a folder of ${unlabelled === 1 ? "its" : "their"} own.`) : null,
+      missing ? h("p", { class: "warn" }, icon("pin"), located === 0 ? (all.length === 1 ? "It has no GPS position." : "None of them has a GPS position.") : missing === 1 ? "1 of them has no GPS position." : `${missing} of them have no GPS position.`) : null,
+      note,
+      h("div", { class: "actions" },
+        h("a", { class: "btn", href: exported.url, download: file.name, onclick: saved }, "Save to this phone"),
+        canShare ? h("button", { class: "btn", onclick: () => navigator.share({ files: [file] }).then(saved, () => {}) }, icon("export"), "Send…") : null,
+        h("button", { class: "btn primary", onclick: closeDialog }, icon("check"), "Done")));
+  } catch (error) {
+    openDialog(h("h3", {}, "Export failed"),
+      h("p", { class: "dim" }, error?.message === "too large" ? "There are more photos than one ZIP file can hold. Delete days that are already exported and try again." : "The phone may be out of memory or storage. Close other apps and try again."),
+      h("div", { class: "actions" }, h("button", { class: "btn primary", onclick: closeDialog }, "OK")));
+  }
+}
+
+// ---------- Start ----------
+
+let wakeLock = null;
+async function stayAwake() { try { wakeLock = await navigator.wakeLock?.request("screen"); } catch {} }
+document.addEventListener("visibilitychange", () => {
+  // The camera is let go while the page is out of sight, and taken again when it is back.
+  if (document.hidden) stopCamera();
+  else { stayAwake(); if (!$("camera").hidden) { cameraState = "starting"; renderCamera(); startCamera(); } }
+});
+window.addEventListener("orientationchange", () => setTimeout(draw, 300));
+
+(async () => {
+  try {
+    db = await openDatabase();
+    photos = (await store("photos", "readonly", s => s.getAll())).sort((a, b) => a.at - b.at);
+  } catch {
+    problem = "This browser will not store photos here. Private browsing does this: open the page in a normal tab.";
+  }
+  renderCamera();
+  if (localStorage.getItem("guide") !== "seen") showGuide();
+  watchPosition();
+  stayAwake();
+  startCamera();
+  setInterval(renderStatus, 5000);
+  $("exportnow").addEventListener("click", exportAll);
+  // Asks the browser not to clear this page's storage when the phone runs short of space.
+  navigator.storage?.persist?.().catch(() => {});
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+})();
+</script>
+</body>
+</html>

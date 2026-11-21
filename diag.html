@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Weed Annotator camera test</title>
+<style>
+body { margin: 0; padding: 16px; background: #000; color: #fff; font: 15px/1.4 -apple-system, system-ui, sans-serif; }
+h1 { font-size: 20px; margin: 0 0 6px; }
+p { margin: 0 0 12px; color: rgba(255,255,255,.62); }
+button { font: inherit; font-weight: 600; color: #000; background: #fff; border: 0; border-radius: 12px; padding: 12px 18px; margin: 0 8px 12px 0; }
+button.quiet { color: #fff; background: rgba(255,255,255,.14); }
+button:disabled { opacity: .4; }
+video { width: 100%; max-height: 40vh; background: #111; border-radius: 12px; }
+pre { white-space: pre-wrap; word-break: break-word; background: #171717; border-radius: 12px; padding: 12px; font: 12px/1.45 ui-monospace, Menlo, monospace; }
+.crops { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+figure { margin: 0; }
+figcaption { font-size: 12px; color: rgba(255,255,255,.62); margin-top: 4px; }
+canvas { width: 160px; height: 160px; border-radius: 8px; background: #111; display: block; }
+</style>
+</head>
+<body>
+<h1>Camera test</h1>
+<p>Finds out what this browser lets a web page do with the camera. Tap Start and allow the camera. A phone with several lenses on the back shows them as several cameras below: try each one on something 10 to 30 cm away and note which keeps a steady, sharp picture and which jumps or keeps refocusing. Send screenshots of the result, or tap Copy.</p>
+<button id="start">Start</button>
+<button id="shoot" disabled>Take test photos</button>
+<button id="big" class="quiet" disabled>Switch to 12 MP</button>
+<button id="copy" class="quiet" disabled>Copy</button>
+<div id="cameras"></div>
+<video id="video" playsinline muted autoplay></video>
+<div id="crops" class="crops"></div>
+<pre id="out">Not started.</pre>
+<script>
+const $ = id => document.getElementById(id);
+const video = $("video");
+const lines = [];
+const say = text => { lines.push(text); $("out").textContent = lines.join("\n"); };
+let track = null;
+
+/** Fine detail in the middle of a picture, at its own resolution: higher is sharper. */
+function sharpness(source, width, height) {
+  const size = Math.min(384, width, height), canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.drawImage(source, (width - size) / 2, (height - size) / 2, size, size, 0, 0, size, size);
+  const data = context.getImageData(0, 0, size, size).data, row = size * 4;
+  let total = 0;
+  for (let y = 1; y < size - 1; y++) for (let i = y * row + 5, end = (y + 1) * row - 4; i < end; i += 4) {
+    const d = 4 * data[i] - data[i - 4] - data[i + 4] - data[i - row] - data[i + row];
+    total += d * d;
+  }
+  return Math.round(total / (size * size));
+}
+/** Shows the middle of a picture pixel for pixel, so that smear can be seen. */
+function show(name, source, width, height) {
+  const size = Math.min(320, width, height), canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  canvas.getContext("2d").drawImage(source, (width - size) / 2, (height - size) / 2, size, size, 0, 0, size, size);
+  const figure = document.createElement("figure"), caption = document.createElement("figcaption");
+  caption.textContent = name;
+  figure.append(canvas, caption);
+  $("crops").append(figure);
+}
+const timed = async work => { const t = performance.now(); const value = await work(); return [value, Math.round(performance.now() - t)]; };
+const within = (promise, ms) => Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error(`no answer in ${ms / 1000} s`)), ms))]);
+
+/** Opens a camera (the back one the browser chooses, or one named by its id) asking for a live picture of this size, and says what came. */
+let chosen = null;
+async function open(width, height) {
+  video.srcObject?.getTracks().forEach(t => t.stop());
+  try {
+    const which = chosen ? { deviceId: { exact: chosen } } : { facingMode: { ideal: "environment" } };
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { ...which, width: { ideal: width }, height: { ideal: height } } });
+    video.srcObject = stream; await video.play();
+    track = stream.getVideoTracks()[0];
+  } catch (error) { say(`Camera asked for ${width}x${height}: failed, ${error.name}: ${error.message}`); return false; }
+  const caps = track.getCapabilities?.() ?? {}, range = r => r ? `${r.min ?? "?"} to ${r.max ?? "?"}` : "not offered";
+  say(`"${track.label}": asked for ${width}x${height}, live picture is ${video.videoWidth}x${video.videoHeight} at ${track.getSettings().frameRate} fps; facing ${caps.facingMode?.join("/") || "?"}; zoom ${range(caps.zoom)}; focus distance ${range(caps.focusDistance)}; largest ${caps.width?.max}x${caps.height?.max}`);
+  return true;
+}
+/** One button for each camera the browser lists. */
+async function listCameras() {
+  const cameras = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "videoinput");
+  say(`Cameras listed: ${cameras.map(c => `"${c.label}"`).join(", ") || "none"}`);
+  $("cameras").replaceChildren(...cameras.map(camera => {
+    const button = document.createElement("button");
+    button.className = "quiet"; button.textContent = camera.label || "Camera";
+    button.onclick = async () => { chosen = camera.deviceId; say(`--- switched to "${camera.label}" ---`); await open(3840, 2160); };
+    return button;
+  }));
+}
+$("start").onclick = async () => {
+  $("start").disabled = true; lines.length = 0;
+  say(navigator.userAgent);
+  say(`Home Screen app: ${matchMedia("(display-mode: standalone)").matches || Boolean(navigator.standalone)}`);
+  if (!await open(3840, 2160)) { $("start").disabled = false; return; }
+  const caps = track.getCapabilities?.() ?? {};
+  say(`Camera: ${track.label}`);
+  say(`Settings: ${JSON.stringify(track.getSettings())}`);
+  say(`Capabilities: ${JSON.stringify(caps)}`);
+  say(`Focus on tap: ${caps.focusMode?.length ? caps.focusMode.join(", ") : "not offered"}`);
+  say(`Exposure control: ${caps.exposureMode?.length ? caps.exposureMode.join(", ") : "not offered"}${caps.exposureTime ? `, time ${JSON.stringify(caps.exposureTime)}` : ""}`);
+  say(`Real stills (ImageCapture): ${"ImageCapture" in window ? "offered" : "not offered"}`);
+  await listCameras();
+  $("shoot").disabled = false; $("big").disabled = false; $("copy").disabled = false;
+};
+
+/** One video frame, then three stills one after another: whether a still is sharper, how long it takes, and whether it keeps working. */
+$("shoot").onclick = async () => {
+  $("shoot").disabled = true; $("crops").replaceChildren();
+  say(`--- test photos at ${video.videoWidth}x${video.videoHeight} ---`);
+  say(`Video frame: sharpness ${sharpness(video, video.videoWidth, video.videoHeight)}`);
+  show("video frame", video, video.videoWidth, video.videoHeight);
+  if ("ImageCapture" in window) {
+    const capture = new ImageCapture(track);
+    for (let i = 1; i <= 3; i++) {
+      try {
+        const [blob, ms] = await timed(() => within(capture.takePhoto(), 8000));
+        const image = new Image(); image.src = URL.createObjectURL(blob); await image.decode();
+        say(`Still ${i}: ${image.naturalWidth}x${image.naturalHeight}, ${(blob.size / 1e6).toFixed(1)} MB, took ${ms} ms, sharpness ${sharpness(image, image.naturalWidth, image.naturalHeight)}`);
+        show(`still ${i}`, image, image.naturalWidth, image.naturalHeight);
+      } catch (error) { say(`Still ${i}: failed, ${error?.name ?? ""} ${error?.message ?? error}`); }
+    }
+  }
+  say("Each square is the middle of that picture, pixel for pixel.");
+  $("shoot").disabled = false;
+};
+/** The same camera asked for its 12-megapixel picture instead of 4K video. */
+$("big").onclick = async () => { $("big").disabled = true; await open(4032, 3024); $("big").disabled = false; };
+$("copy").onclick = async () => { try { await navigator.clipboard.writeText(lines.join("\n")); $("copy").textContent = "Copied"; } catch { $("copy").textContent = "Select the text to copy"; } };
+</script>
+</body>
+</html>
